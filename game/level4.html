@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地球超人：配對清潔</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js CDN for background music and sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #003d52; /* Darker ocean blue */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+
+        .game-container {
+            width: 95vw;
+            max-width: 900px; /* Wider for more layout space */
+            height: 90vh;
+            max-height: 700px; /* Taller */
+            border-radius: 20px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            background-color: #0077be; /* Main ocean background */
+        }
+
+        .game-header {
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 10px 20px;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .game-area {
+            flex-grow: 1;
+            position: relative;
+            display: grid;
+            grid-template-rows: 45% 55%; /* Top for trash, bottom for consequences */
+            background-color: #0077be; /* Ocean background */
+            padding: 10px; /* Inner padding */
+        }
+
+        .trash-spawn-area {
+            position: relative;
+            background-color: rgba(0, 0, 0, 0.1); /* Slightly darker transparent layer for trash area */
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-wrap: wrap; /* Allows trash items to wrap */
+            justify-content: center; /* Center items for better scattered look */
+            align-content: flex-start; /* Align content to the start of the flex container */
+            overflow: hidden; /* Ensure trash doesn't go outside */
+        }
+
+        .consequence-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); /* Responsive grid columns */
+            gap: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.2); /* Slightly darker transparent layer for consequences */
+            border-radius: 10px;
+            overflow-y: auto; /* Allow scrolling if many items */
+        }
+
+        .trash-item {
+            position: absolute; /* Absolute positioning for scattering */
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.7); /* Whiteish transparent for trash items */
+            border-radius: 15px;
+            cursor: grab;
+            z-index: 5; /* Above background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 36px; /* Emoji size */
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+            transition: transform 0.1s ease-out, box-shadow 0.1s ease-out; /* Smooth feedback */
+        }
+
+        .trash-item:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+        }
+
+        .trash-item.dragging {
+            opacity: 0.7;
+            transform: scale(1.1);
+            cursor: grabbing;
+            z-index: 10; /* Bring to front when dragging */
+        }
+
+        .trash-item.matched {
+            opacity: 0;
+            transform: scale(0);
+            pointer-events: none; /* Disable interaction */
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+
+        .consequence-box {
+            background-color: rgba(255, 255, 255, 0.9); /* White background for text box */
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 0.9rem;
+            color: #333;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            border: 2px dashed rgba(0, 0, 0, 0.3); /* Dashed border for drop target */
+            transition: background-color 0.2s ease-out, border-color 0.2s ease-out;
+        }
+
+        .consequence-box.drag-over {
+            background-color: rgba(144, 238, 144, 0.6); /* Light green when dragging over */
+            border-color: #22c55e; /* Tailwind green-500 */
+        }
+        .consequence-box.matched-target {
+            background-color: rgba(34, 197, 94, 0.2); /* Faded green when matched */
+            border-color: #22c55e;
+        }
+
+
+        .consequence-box .consequence-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 1.1rem;
+            /* This will be hidden as per user request */
+            display: none;
+        }
+
+        /* Introduction and Message Overlay */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            font-size: 1.8rem;
+            padding: 20px;
+            border-radius: 20px;
+            z-index: 100;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .overlay p {
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .message-box {
+            background-color: rgba(0, 0, 0, 0.85);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 0 25px rgba(255, 255, 255, 0.3);
+            animation: scaleIn 0.3s ease-out;
+        }
+
+        .action-button {
+            background: linear-gradient(145deg, #0d9488, #065f46);
+            color: white;
+            padding: 12px 28px;
+            border-radius: 30px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .action-button:hover {
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            background: linear-gradient(145deg, #14b8a6, #0d9488);
+        }
+
+        .action-button:active {
+            transform: translateY(1px);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .game-container {
+                width: 98vw;
+                height: 95vh;
+            }
+            .game-area {
+                grid-template-rows: 40% 60%; /* Adjust grid for smaller screens */
+            }
+            .trash-item {
+                width: 50px;
+                height: 50px;
+                font-size: 30px;
+            }
+            .consequence-box {
+                font-size: 0.8rem;
+                padding: 10px;
+            }
+            .consequence-box .consequence-title {
+                font-size: 1rem;
+            }
+            .overlay {
+                font-size: 1.2rem;
+            }
+            .action-button {
+                padding: 10px 20px;
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div class="game-header">
+            <div class="text-lg font-bold">已配對: <span id="matchedCount">0</span> / <span id="totalItems">0</span></div>
+            <div class="text-lg font-bold">時間: <span id="timer">30</span>秒</div>
+        </div>
+
+        <div class="game-area" id="gameArea">
+            <div class="trash-spawn-area" id="trashSpawnArea">
+                <!-- Trash items will be dynamically added here -->
+            </div>
+            <div class="consequence-grid" id="consequenceGrid">
+                <!-- Consequence boxes will be dynamically added here -->
+            </div>
+
+            <!-- Introduction Overlay -->
+            <div id="introOverlay" class="overlay">
+                <div class="message-box">
+                    <p class="font-bold text-2xl mb-4">第四關: 配對清潔!</p>
+                    <p class="text-lg">將散落的海洋垃圾拖曳到對應的危害格子裡。</p>
+                    <p class="text-lg">在30秒內完成所有配對！</p>
+                    <p class="text-sm mt-4 text-gray-300">(拖曳垃圾到正確的危害說明中)</p>
+                    <button id="startButton" class="action-button mt-6">開始配對</button>
+                </div>
+            </div>
+
+            <!-- Game Over/Win Overlay -->
+            <div id="resultOverlay" class="overlay hidden">
+                <div class="message-box">
+                    <p id="resultText" class="font-bold text-3xl mb-4"></p>
+                    <button id="restartButton" class="action-button">重新開始</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const gameArea = document.getElementById('gameArea');
+        const matchedCountDisplay = document.getElementById('matchedCount');
+        const totalItemsDisplay = document.getElementById('totalItems');
+        const timerDisplay = document.getElementById('timer');
+        const trashSpawnArea = document.getElementById('trashSpawnArea');
+        const consequenceGrid = document.getElementById('consequenceGrid');
+        const introOverlay = document.getElementById('introOverlay');
+        const resultOverlay = document.getElementById('resultOverlay');
+        const resultText = document.getElementById('resultText');
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+
+        // Game State Variables
+        let matchedCount = 0;
+        let totalTrashItems = 0;
+        let timeLeft = 0;
+        let gameInterval;
+        let isGameActive = false;
+        let draggableTrashItems = []; // Stores references to draggable trash elements
+        let currentDraggingItem = null; // Stores the trash item currently being dragged
+
+        // Game Configuration Constants for Level 4
+        const LEVEL4_TIME_LIMIT = 30; // Seconds to complete
+        const MIN_TRASH_INSTANCES_PER_TYPE = 2; // Each trash type will have at least this many instances
+        const MAX_TRASH_INSTANCES_PER_TYPE = 4; // Each trash type will have at most this many instances
+
+        // Define the matching pairs (Trash Emoji -> Consequence Description)
+        const matchingPairs = [
+            {
+                id: 'aluminumCan',
+                trash: '🥫',
+                name: '鋁罐', // Name is kept for internal reference, but not displayed
+                consequence: '難以自然分解，且容易被海洋生物誤食或纏繞，造成傷害。',
+            },
+            {
+                id: 'plasticBottle',
+                trash: '🧴',
+                name: '塑膠瓶',
+                consequence: '分解成微塑膠，進入食物鏈，對海洋生物和人類健康有害。',
+            },
+            {
+                id: 'fishingNet',
+                trash: '🕸️',
+                name: '廢棄漁網',
+                consequence: '幽靈漁具，長時間在海中漂流，纏繞並殺死大量海洋生物。',
+            },
+            {
+                id: 'disposableUtensils',
+                trash: '🍴',
+                name: '一次性餐具',
+                consequence: '體積小易被誤食，且大多為塑膠，分解緩慢，污染海洋。',
+            },
+            {
+                id: 'battery',
+                trash: '🔋',
+                name: '電池',
+                consequence: '釋放有毒重金屬，污染海水和海洋生物，破壞生態系統。',
+            }
+        ];
+
+        // Tone.js Audio Setup
+        let synthBGM;
+        let matchSoundSynth;
+        let mismatchSoundSynth;
+        let gameOverSoundSynth;
+        let winSoundSynth;
+
+        async function setupAudio() {
+            await Tone.start();
+
+            // Background Music (playful, puzzle-like)
+            synthBGM = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sine" },
+                envelope: { attack: 0.2, decay: 0.1, sustain: 0.7, release: 0.5 },
+                volume: -18
+            }).toDestination();
+
+            const loop = new Tone.Loop(time => {
+                const notes = ["C4", "E4", "G4", "C5"];
+                const notes2 = ["F4", "A4", "C5", "F5"];
+                const notes3 = ["G4", "B4", "D5", "G5"];
+                const notes4 = ["Am4", "C5", "E5", "A5"]; // A minor chord
+
+                if (loop.progress < 0.25) { synthBGM.triggerAttackRelease(notes, "1n", time); }
+                else if (loop.progress < 0.5) { synthBGM.triggerAttackRelease(notes2, "1n", time); }
+                else if (loop.progress < 0.75) { synthBGM.triggerAttackRelease(notes3, "1n", time); }
+                else { synthBGM.triggerAttackRelease(notes4, "1n", time); }
+            }, "2n").start(0);
+
+            Tone.Transport.start();
+
+            // Match Sound
+            matchSoundSynth = new Tone.Synth().toDestination();
+
+            // Mismatch Sound
+            mismatchSoundSynth = new Tone.Synth({
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.01, decay: 0.2, sustain: 0.05, release: 0.1 },
+            }).toDestination();
+
+            // Game Over Sound
+            gameOverSoundSynth = new Tone.MembraneSynth().toDestination();
+
+            // Win Sound
+            winSoundSynth = new Tone.Synth({
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.1, decay: 0.5, sustain: 0.2, release: 1 },
+            }).toDestination();
+        }
+
+        // Call setupAudio on initial user interaction
+        startButton.addEventListener('click', () => {
+            setupAudio().then(() => {
+                startGame();
+                playBackgroundMusic();
+            });
+        }, { once: true });
+
+        function playBackgroundMusic() {
+            if (synthBGM) {
+                synthBGM.volume.value = -10;
+            }
+        }
+
+        function stopBackgroundMusic() {
+            if (synthBGM) {
+                synthBGM.volume.value = -Infinity;
+            }
+        }
+
+        function playMatchSound() {
+            if (matchSoundSynth) {
+                matchSoundSynth.triggerAttackRelease("C5", "16n");
+            }
+        }
+
+        function playMismatchSound() {
+            if (mismatchSoundSynth) {
+                mismatchSoundSynth.triggerAttackRelease("C3", "32n"); // Lower, quick sound
+            }
+        }
+
+        function playGameOverSound() {
+            if (gameOverSoundSynth) {
+                gameOverSoundSynth.triggerAttackRelease("C2", "2n");
+            }
+        }
+
+        function playWinSound() {
+            if (winSoundSynth) {
+                winSoundSynth.triggerAttackRelease("C5", "8n");
+                setTimeout(() => winSoundSynth.triggerAttackRelease("E5", "8n"), 100);
+                setTimeout(() => winSoundSynth.triggerAttackRelease("G5", "8n"), 200);
+            }
+        }
+
+        // --- Game Setup ---
+        function createGameElements() {
+            // Clear existing elements
+            trashSpawnArea.innerHTML = '';
+            consequenceGrid.innerHTML = '';
+            draggableTrashItems = [];
+            matchedCount = 0;
+            totalTrashItems = 0;
+
+            // Create Consequence Boxes
+            matchingPairs.forEach(pair => {
+                const box = document.createElement('div');
+                box.classList.add('consequence-box');
+                box.dataset.consequenceId = pair.id; // Store ID for matching
+                // ONLY show the consequence description, NOT the trash name
+                box.innerHTML = `<p>${pair.consequence}</p>`;
+                consequenceGrid.appendChild(box);
+
+                // Add drop event listeners
+                box.addEventListener('dragover', handleDragOver);
+                box.addEventListener('dragleave', handleDragLeave);
+                box.addEventListener('drop', handleDrop);
+            });
+
+            // Create Trash Items with random quantities and scattered positions
+            matchingPairs.forEach(pair => {
+                const numInstances = Math.floor(Math.random() * (MAX_TRASH_INSTANCES_PER_TYPE - MIN_TRASH_INSTANCES_PER_TYPE + 1)) + MIN_TRASH_INSTANCES_PER_TYPE;
+                totalTrashItems += numInstances;
+
+                for (let i = 0; i < numInstances; i++) {
+                    const trash = document.createElement('div');
+                    trash.classList.add('trash-item');
+                    trash.textContent = pair.trash;
+                    trash.dataset.trashId = pair.id; // Store ID for matching
+                    trash.draggable = true; // Make it draggable
+
+                    // Random positioning within the trash spawn area
+                    const randomX = Math.random() * (trashSpawnArea.clientWidth - 60); // - item width
+                    const randomY = Math.random() * (trashSpawnArea.clientHeight - 60); // - item height
+
+                    trash.style.left = `${randomX}px`;
+                    trash.style.top = `${randomY}px`;
+
+                    trashSpawnArea.appendChild(trash);
+                    draggableTrashItems.push(trash);
+
+                    // Add drag event listeners
+                    trash.addEventListener('dragstart', handleDragStart);
+                    trash.addEventListener('dragend', handleDragEnd);
+                }
+            });
+
+            totalItemsDisplay.textContent = totalTrashItems;
+            matchedCountDisplay.textContent = matchedCount;
+
+            // Adjust trash items positions after they are added and trashSpawnArea has dimensions
+            setTimeout(() => {
+                draggableTrashItems.forEach(trash => {
+                    const randomX = Math.random() * (trashSpawnArea.clientWidth - trash.clientWidth);
+                    const randomY = Math.random() * (trashSpawnArea.clientHeight - trash.clientHeight);
+                    trash.style.left = `${randomX}px`;
+                    trash.style.top = `${randomY}px`;
+                });
+            }, 50); // Small delay to allow layout to settle
+        }
+
+        // --- Drag & Drop Handlers ---
+        function handleDragStart(e) {
+            currentDraggingItem = e.target;
+            currentDraggingItem.classList.add('dragging');
+            e.dataTransfer.setData('text/plain', e.target.dataset.trashId); // Pass the trash ID
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function handleDragEnd(e) {
+            if (currentDraggingItem) {
+                currentDraggingItem.classList.remove('dragging');
+                currentDraggingItem = null;
+            }
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault(); // Allow drop
+            if (e.target.classList.contains('consequence-box') || e.target.closest('.consequence-box')) {
+                e.target.closest('.consequence-box').classList.add('drag-over');
+            }
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        function handleDragLeave(e) {
+            if (e.target.classList.contains('consequence-box') || e.target.closest('.consequence-box')) {
+                e.target.closest('.consequence-box').classList.remove('drag-over');
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            const droppedOnBox = e.target.closest('.consequence-box'); // Use closest to get the box even if dropped on child elements
+
+            if (droppedOnBox) {
+                droppedOnBox.classList.remove('drag-over');
+                const trashId = e.dataTransfer.getData('text/plain');
+                const consequenceId = droppedOnBox.dataset.consequenceId;
+
+                if (trashId === consequenceId) {
+                    // Correct match!
+                    matchedCount++;
+                    matchedCountDisplay.textContent = matchedCount;
+                    playMatchSound();
+
+                    // Hide the trash item and mark the box
+                    currentDraggingItem.classList.add('matched');
+                    // Mark the consequence box with a subtle background, but keep it interactive
+                    droppedOnBox.classList.add('matched-target');
+                    // droppedOnBox.style.pointerEvents = 'none'; // REMOVED: Keep box interactive
+
+                    checkWinLoseCondition();
+                } else {
+                    // Incorrect match!
+                    playMismatchSound();
+                    // Optionally, provide visual feedback or return item to original position
+                    // For now, the item is not hidden, and the user must retry.
+                }
+            }
+            // Reset dragging state even if dropped outside a valid target
+            if (currentDraggingItem) {
+                currentDraggingItem.classList.remove('dragging');
+                currentDraggingItem = null;
+            }
+        }
+
+        // --- Game Flow ---
+        function startGame() {
+            introOverlay.classList.add('hidden');
+            resultOverlay.classList.add('hidden');
+            isGameActive = true;
+            timeLeft = LEVEL4_TIME_LIMIT;
+            timerDisplay.textContent = timeLeft;
+
+            createGameElements(); // Setup all trash and consequence boxes
+
+            gameInterval = setInterval(() => {
+                timeLeft--;
+                timerDisplay.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(gameInterval);
+                    if (isGameActive) {
+                        endGame(false); // Mission Failed - time's up
+                    }
+                }
+            }, 1000);
+        }
+
+        function checkWinLoseCondition() {
+            if (matchedCount === totalTrashItems) {
+                endGame(true); // Win! All matched
+            }
+            // Lose condition is handled by timer running out
+        }
+
+        function endGame(isWin) {
+            isGameActive = false;
+            clearInterval(gameInterval);
+            stopBackgroundMusic();
+
+            if (isWin) {
+                resultText.textContent = "任務完成! 您成功清理了海洋垃圾!";
+                playWinSound();
+            } else {
+                resultText.textContent = "任務失敗! 未能在時間內完成配對...";
+                playGameOverSound();
+            }
+            resultOverlay.classList.remove('hidden');
+
+            // Reset visual states
+            draggableTrashItems.forEach(item => item.remove());
+            draggableTrashItems = [];
+            document.querySelectorAll('.consequence-box').forEach(box => {
+                box.classList.remove('matched-target');
+                box.style.pointerEvents = 'auto'; // Re-enable pointer events if it was somehow disabled
+            });
+        }
+
+        restartButton.addEventListener('click', () => {
+            startGame();
+            playBackgroundMusic();
+        });
+
+        // Initialize game on window load to show intro screen
+        window.onload = () => {
+            introOverlay.classList.remove('hidden');
+            resultOverlay.classList.add('hidden');
+            matchedCountDisplay.textContent = 0;
+            totalItemsDisplay.textContent = 0; // Will be updated by createGameElements
+            timerDisplay.textContent = LEVEL4_TIME_LIMIT;
+        };
+
+        // Important: Set initial dimensions for trashSpawnArea for random positioning to work correctly
+        function setTrashSpawnAreaDimensions() {
+            const gameAreaRect = gameArea.getBoundingClientRect();
+            trashSpawnArea.style.width = `${gameAreaRect.width - 20}px`;
+            trashSpawnArea.style.height = `${gameAreaRect.height * 0.45 - 10}px`;
+        }
+
+        // Call it once on load and also on window resize
+        window.addEventListener('load', setTrashSpawnAreaDimensions);
+        window.addEventListener('resize', setTrashSpawnAreaDimensions);
+
+    </script>
+</body>
+</html>
